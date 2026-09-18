@@ -1,0 +1,134 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://novaops.example/schemas/vendor-extraction-result.schema.json",
+  "title": "VendorExtractionResult",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "source_id",
+    "source_type",
+    "record",
+    "missing_required_fields",
+    "conflicts",
+    "follow_up_questions"
+  ],
+  "properties": {
+    "source_id": {"type": "string", "minLength": 1},
+    "source_type": {
+      "type": "string",
+      "enum": ["formal_document", "email_chain", "call_transcript"]
+    },
+    "record": {"$ref": "#/$defs/vendor_crm_record"},
+    "missing_required_fields": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/required_field_name"}
+    },
+    "conflicts": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1}
+    },
+    "follow_up_questions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["field", "question"],
+        "properties": {
+          "field": {"$ref": "#/$defs/required_field_name"},
+          "question": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "nullable_string": {"type": ["string", "null"]},
+    "required_field_name": {
+      "type": "string",
+      "enum": [
+        "vendor_name",
+        "legal_name",
+        "primary_contact_name",
+        "primary_contact_email",
+        "service_category",
+        "internal_owner_department",
+        "annual_cost_usd",
+        "contract_start_date",
+        "contract_end_date",
+        "renewal_type",
+        "payment_terms",
+        "data_sensitivity",
+        "security_review_required"
+      ]
+    },
+    "vendor_crm_record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "vendor_name",
+        "legal_name",
+        "primary_contact_name",
+        "primary_contact_email",
+        "service_category",
+        "internal_owner_department",
+        "annual_cost_usd",
+        "contract_start_date",
+        "contract_end_date",
+        "renewal_type",
+        "payment_terms",
+        "data_sensitivity",
+        "security_review_required",
+        "website",
+        "contact_phone",
+        "headquarters",
+        "implementation_notes"
+      ],
+      "properties": {
+        "vendor_name": {"$ref": "#/$defs/nullable_string", "x-crm-required": true},
+        "legal_name": {"$ref": "#/$defs/nullable_string", "x-crm-required": true},
+        "primary_contact_name": {"$ref": "#/$defs/nullable_string", "x-crm-required": true},
+        "primary_contact_email": {
+          "type": ["string", "null"],
+          "format": "email",
+          "x-crm-required": true
+        },
+        "service_category": {"$ref": "#/$defs/nullable_string", "x-crm-required": true},
+        "internal_owner_department": {"$ref": "#/$defs/nullable_string", "x-crm-required": true},
+        "annual_cost_usd": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "x-crm-required": true
+        },
+        "contract_start_date": {
+          "type": ["string", "null"],
+          "format": "date",
+          "x-crm-required": true
+        },
+        "contract_end_date": {
+          "type": ["string", "null"],
+          "format": "date",
+          "x-crm-required": true
+        },
+        "renewal_type": {
+          "type": ["string", "null"],
+          "enum": ["automatic", "manual", "usage_based", "ambiguous", null],
+          "x-crm-required": true
+        },
+        "payment_terms": {"$ref": "#/$defs/nullable_string", "x-crm-required": true},
+        "data_sensitivity": {
+          "type": ["string", "null"],
+          "enum": ["Public", "Internal", "Confidential", "Restricted", "Highly Restricted", null],
+          "x-crm-required": true
+        },
+        "security_review_required": {
+          "type": ["boolean", "null"],
+          "x-crm-required": true
+        },
+        "website": {"$ref": "#/$defs/nullable_string", "x-crm-required": false},
+        "contact_phone": {"$ref": "#/$defs/nullable_string", "x-crm-required": false},
+        "headquarters": {"$ref": "#/$defs/nullable_string", "x-crm-required": false},
+        "implementation_notes": {"$ref": "#/$defs/nullable_string", "x-crm-required": false}
+      }
+    }
+  }
+}

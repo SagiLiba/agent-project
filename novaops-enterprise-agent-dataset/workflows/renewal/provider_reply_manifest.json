@@ -1,0 +1,22 @@
+[
+  {
+    "fixture_id": "webex_renewal_approved",
+    "path": "provider_replies/webex_renewal_approved.eml",
+    "demo_weight": 4
+  },
+  {
+    "fixture_id": "webex_renewal_conditional",
+    "path": "provider_replies/webex_renewal_conditional.eml",
+    "demo_weight": 2
+  },
+  {
+    "fixture_id": "webex_renewal_rejected",
+    "path": "provider_replies/webex_renewal_rejected.eml",
+    "demo_weight": 2
+  },
+  {
+    "fixture_id": "webex_renewal_ambiguous",
+    "path": "provider_replies/webex_renewal_ambiguous.eml",
+    "demo_weight": 2
+  }
+]

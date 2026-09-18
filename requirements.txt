@@ -1,0 +1,22 @@
+# NovaOps Company Brain — Maya + Webex on one LangGraph backbone.
+# Base stack matches the course's Lesson 10 (agent backbone) and Lesson 11
+# (Langfuse observability) requirements.txt files, so we stay on versions the
+# course already validated against Bedrock Nova 2 Lite + Titan embeddings.
+
+boto3                     # Bedrock access (via langchain-aws); Titan embeddings for RAG
+python-dotenv             # load .env
+mcp<2                     # MCP SDK — pinned to 1.x; langchain-mcp-adapters doesn't support 2.0 yet
+faiss-cpu                 # local vector index for the RAG tools (Lesson 7 / 10)
+numpy                     # vector math for FAISS
+pydantic                  # TurnPlan, OnboardingChecklist, AccessDecision, WebexHandoff schemas
+langchain                 # chat-model interface and structured output
+langchain-aws             # ChatBedrockConverse — LangChain's wrapper over Bedrock Converse
+langgraph                 # StateGraph, checkpointer, conditional edges, interrupt()
+langchain-mcp-adapters    # load the MCP server's tools as LangChain tools
+langgraph-checkpoint-sqlite  # durable checkpointer for the Webex approval pause/resume (Step 5/8)
+
+# v4 supplies observation-first tracing and the v2 read APIs (Lesson 11 / Milestone 5)
+langfuse>=4.10,<5
+
+# Testing
+pytest

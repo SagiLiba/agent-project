@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://novaops.example/schemas/provider-renewal-decision.schema.json",
+  "title": "ProviderRenewalDecision",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "fixture_id",
+    "message_id",
+    "contract_id",
+    "decision",
+    "confirmation_id",
+    "new_seat_limit",
+    "annual_cost_usd",
+    "term_start_date",
+    "term_end_date",
+    "conditions",
+    "missing_fields"
+  ],
+  "properties": {
+    "fixture_id": {"type": "string", "minLength": 1},
+    "message_id": {"type": "string", "minLength": 1},
+    "contract_id": {"type": ["string", "null"]},
+    "decision": {
+      "type": "string",
+      "enum": ["approved", "conditional", "rejected", "ambiguous"]
+    },
+    "confirmation_id": {"type": ["string", "null"]},
+    "new_seat_limit": {"type": ["integer", "null"], "minimum": 0},
+    "annual_cost_usd": {"type": ["integer", "null"], "minimum": 0},
+    "term_start_date": {"type": ["string", "null"], "format": "date"},
+    "term_end_date": {"type": ["string", "null"], "format": "date"},
+    "conditions": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1}
+    },
+    "missing_fields": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "enum": [
+          "contract_id",
+          "confirmation_id",
+          "new_seat_limit",
+          "annual_cost_usd",
+          "term_start_date",
+          "term_end_date"
+        ]
+      }
+    }
+  }
+}

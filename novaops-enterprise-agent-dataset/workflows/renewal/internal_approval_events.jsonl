@@ -1,0 +1,2 @@
+{"event_id":"IA-WEBEX-APPROVE-001","renewal_run_id":"RR-WEBEX-2026","contract_id":"C001","actor_employee_id":"E006","decision":"approved","channel":"slack","reason":"Renew Webex and request expansion to 50 seats so blocked Customer Success requests can proceed.","decided_at":"2026-07-03T09:15:00Z"}
+{"event_id":"IA-WEBEX-REJECT-001","renewal_run_id":"RR-WEBEX-2026","contract_id":"C001","actor_employee_id":"E006","decision":"rejected","channel":"email","reason":"Do not renew until Finance approves the revised annual cost.","decided_at":"2026-07-03T09:20:00Z"}

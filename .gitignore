@@ -1,0 +1,31 @@
+# Your AWS / API credentials — copy .env.example to .env and fill it in. Never commit .env.
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Virtualenv
+.venv/
+venv/
+.python-version
+
+# Local SQLite databases (novaops.db, checkpointers, outbox tables)
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Local vector DB stores the labs may create
+chroma_db/
+qdrant_storage/
+*.faiss
+faiss_index*/
+
+# IDE / OS — but NOT .vscode/settings.json: each lesson ships one so walkthroughs
+# open in rendered markdown preview.
+.vscode/*
+!.vscode/settings.json
+.idea/
+.DS_Store
