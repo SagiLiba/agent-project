@@ -14,6 +14,7 @@ langchain-aws             # ChatBedrockConverse — LangChain's wrapper over Bed
 langgraph                 # StateGraph, checkpointer, conditional edges, interrupt()
 langchain-mcp-adapters    # load the MCP server's tools as LangChain tools
 langgraph-checkpoint-sqlite  # durable checkpointer for the Webex approval pause/resume (Step 5/8)
+aiosqlite                 # the graph is async throughout -> AsyncSqliteSaver, not the sync SqliteSaver
 
 # v4 supplies observation-first tracing and the v2 read APIs (Lesson 11 / Milestone 5)
 langfuse>=4.10,<5
