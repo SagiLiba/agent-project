@@ -1,14 +1,16 @@
 """
-NovaOps agent backbone: one graph, one classify step, per-scope tool visibility.
+NovaOps agent backbone: one graph, one classify step, per-scope tool visibility,
+a write gate that only a recorded human approval can open.
 
 Lesson 10's `02-dynamic-tool-loadout/graph.py` mechanics — section 7's build
-table names this file explicitly — extended in the three ways Step 5 set out
-to close:
+table names this file explicitly — extended in the four ways Steps 5 and 6 set
+out to close:
 
-    START -> plan -> select -> model[loadout] -> tools --+
-                               | no tool calls            |
-                               | under-served -> rearm ---+
-                               +---------------------> END
+    START -> plan -> select -> approval_gate -> model[loadout] -> tools --+
+                                 | interrupt()            | no tool calls |
+                                 | pauses HERE             | under-served  |
+                                 | on a write request      v -> rearm -----+
+                                                    +---------------------> END
 
 1. CALLER IDENTITY IS AN APPLICATION INPUT, NEVER A MODEL INFERENCE
    (PROJECT-DESCRIPTION.md section 8, verbatim). `CallerContext` enters state
@@ -28,12 +30,24 @@ to close:
    `NotImplementedError` on every async checkpoint call) opens the same real
    file every run, the same way `db.py` opens `novaops.db`.
 
-3. SCOPE ENFORCEMENT IS STRUCTURAL, NOT JUST POLICY. `select_tools` (Step 5's
-   policy.py) is the deterministic gate; this file adds nothing on top of it
-   for scope — it trusts that gate completely, the same way Lesson 10 trusts
-   `select()`'s output. What it does NOT yet trust as complete: releasing a
-   write tool into the loadout is not the same as executing it against a
-   RECORDED approval. That second gate is Step 6.
+3. SCOPE ENFORCEMENT IS STRUCTURAL, NOT JUST POLICY. `select_tools` (policy.py)
+   is the deterministic READ-tool gate; this file trusts its output completely
+   for reads, the same way Lesson 10 trusts `select()`'s output. It releases
+   NO write tool at all anymore (Step 6 moved that entirely out of policy.py).
+
+4. THE WRITE GATE — Lesson 9's `interrupt()`, made durable (item 2 above), and
+   made to gate on a RECORDED DECISION rather than a model-inferred one
+   (PROJECT-DESCRIPTION.md section 12's own framing: "action_confirmed gates
+   visibility; the approval record gates the write"). `approval_gate` below is
+   the new node: when a turn's plan says the user just confirmed a webex-scope
+   write (`action_confirmed`), it checks `db.approval_is_recorded(thread_id,
+   tool_name)` — a real column in the dataset's OWN `approvals` table
+   (schema.sql), reused here as this gate's ledger. Not recorded yet ->
+   `interrupt()` pauses the ENTIRE graph (durably — see item 2) and hands the
+   pause back to the caller; recorded -> the write tool joins the loadout and
+   `model` gets to call it for real. The model is NEVER the thing that decides
+   this; `db.py`'s four ledger functions are deliberately not MCP tools, so
+   there is no path by which the model could call them on itself.
 """
 
 import os
@@ -41,19 +55,46 @@ import sys
 from pathlib import Path
 from typing import Annotated, TypedDict
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+AGENT_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(AGENT_DIR))
+# db.py is a SERVER-side module (src/server/), imported directly here rather
+# than via an MCP tool call — deliberate, and narrow: see item 4 above and
+# db.py's own module docstring ("Deliberately NOT exposed as MCP tools").
+# Every OTHER piece of business data still goes through the MCP tool layer
+# (model.load_tools) exactly as Steps 4/5 established; only the write gate's
+# own ledger bypasses it, because exposing it as a tool would let the model
+# call the function that authorizes the model's own write.
+sys.path.insert(0, str(AGENT_DIR.parent / "server"))
 
 import aiosqlite
+import db  # noqa: E402 — the write gate's ledger; see comment above
 from langchain_core.messages import HumanMessage, RemoveMessage, ToolMessage
+from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
+from langgraph.types import Command, interrupt
 
 from model import get_model, message_text, trace
-from policy import TurnPlan, WRITE_TOOLS, answer_messages, planner_messages, select_tools
+from policy import (
+    CONFIRMED_WRITE_TOOLS,
+    TurnPlan,
+    WRITE_TOOLS,
+    answer_messages,
+    planner_messages,
+    select_tools,
+)
 
 CHECKPOINT_PATH = os.environ.get("NOVAOPS_CHECKPOINT_PATH", "./novaops_checkpoints.db")
+
+# Safety net, not a normal path: model -> tools has no other cap on how many
+# rounds it can bounce before answering. Discovered the hard way (Step 6):
+# a denial the model was never told about made it fish for evidence forever.
+# The real fix is telling it (approval_gate's relevant_constraints note,
+# above); this just turns "hangs indefinitely, burning real API calls" into a
+# clear GraphRecursionError if some future prompt/tool combination does it again.
+RECURSION_LIMIT = 40
 
 # Tool name -> the argument that must always carry the REAL caller id, never
 # whatever the model proposed. One entry today (search_hr_documents's audience
@@ -194,6 +235,79 @@ def build_graph(tools: list, checkpointer):
         trace("select", f"loadout={loadout or '(none)'}")
         return {"loadout": loadout, "rearmed": False}
 
+    # 2b. THE WRITE GATE ---------------------------------------------------------
+    def approval_gate(state: AgentState, config: RunnableConfig) -> dict:
+        """The only node that can add a write tool to a turn's loadout.
+
+        Triggers only on `scope=="webex" and action_confirmed` — the model's
+        "go ahead" is what puts a request IN FRONT OF a human; it is not what
+        authorizes anything. For each write tool this intent could release
+        (policy.CONFIRMED_WRITE_TOOLS): if `db.approval_is_recorded` is already
+        True, add it and move on — no second interrupt for an already-decided
+        case. Otherwise open (or reopen) a pending ledger row and call
+        `interrupt()`, which suspends the WHOLE graph right here and hands its
+        payload back to whoever called `.ainvoke` — durably, because the
+        checkpointer already persisted everything up to this point (item 2 in
+        the module docstring). Resuming with `Command(resume=decision)` picks
+        up on this exact line; `db.record_write_decision` runs, and only a
+        `{"approved": True}` decision adds the tool to the loadout.
+
+        A decision made just now (either way) is also written into
+        `plan.relevant_constraints` before `model` ever runs. Without this,
+        a DENIAL is invisible to the model: it still sees a webex-scope,
+        `action_confirmed=True` access_request with no write tool in its
+        loadout, and — nothing in its prompt says a human already ruled on
+        this — the model just keeps calling read tools looking for a way to
+        justify one, and the graph's rearm fallback keeps giving it more,
+        forever. An APPROVAL doesn't strictly need this (the tool is just
+        THERE for the model to call), but the note is added for both
+        outcomes anyway, so the model never has to guess what happened.
+        """
+        plan = TurnPlan(**state["plan"])
+        loadout = list(state["loadout"])
+        if plan.scope == "webex" and plan.action_confirmed:
+            thread_id = config["configurable"]["thread_id"]
+            for tool_name in sorted(CONFIRMED_WRITE_TOOLS.get(plan.current_intent, set())):
+                if tool_name not in by_name:
+                    continue  # this run's MCP server doesn't expose it — nothing to gate
+                if db.approval_is_recorded(thread_id, tool_name):
+                    trace("approval_gate", f"{tool_name} already approved for {thread_id} — releasing")
+                    loadout.append(tool_name)
+                    continue
+
+                db.request_write_approval(thread_id, tool_name)  # idempotent
+                trace("approval_gate", f"pausing for human approval of {tool_name} (thread={thread_id})")
+                decision = interrupt({
+                    "kind": "write_approval",
+                    "tool": tool_name,
+                    "thread_id": thread_id,
+                    "intent": plan.current_intent,
+                    "relevant_facts": plan.relevant_facts,
+                    "question": f"Approve releasing {tool_name} for this case?",
+                })
+                approved = bool(decision.get("approved"))
+                db.record_write_decision(
+                    thread_id, tool_name,
+                    approved=approved,
+                    reason=decision.get("reason", ""),
+                    decided_by=decision.get("decided_by", "human"),
+                )
+                trace("approval_gate", f"{tool_name} decision recorded: approved={approved}")
+                if approved:
+                    loadout.append(tool_name)
+                    plan.relevant_constraints.append(
+                        f"A human just APPROVED releasing {tool_name} for this request "
+                        f"(by {decision.get('decided_by', 'human')}). Call it now; do not ask again."
+                    )
+                else:
+                    reason = decision.get("reason") or "no reason given"
+                    plan.relevant_constraints.append(
+                        f"A human just DENIED releasing {tool_name} for this request: {reason}. "
+                        "Do not call any more tools trying to work around this — tell the user "
+                        "plainly that it was declined and why, citing that reason."
+                    )
+        return {"loadout": sorted(set(loadout)), "plan": plan.model_dump()}
+
     # 3. MODEL, CALLER INJECTION, FALLBACK --------------------------------------
     def call_model(state: AgentState) -> dict:
         loadout = state["loadout"]
@@ -241,13 +355,15 @@ def build_graph(tools: list, checkpointer):
     graph = StateGraph(AgentState)
     graph.add_node("plan", plan_turn)
     graph.add_node("select", select)
+    graph.add_node("approval_gate", approval_gate)
     graph.add_node("model", call_model)
     graph.add_node("rearm", rearm)
     graph.add_node("tools", tools_node)
 
     graph.add_edge(START, "plan")
     graph.add_edge("plan", "select")
-    graph.add_edge("select", "model")
+    graph.add_edge("select", "approval_gate")
+    graph.add_edge("approval_gate", "model")
     graph.add_conditional_edges("model", route, {"tools": "tools", "rearm": "rearm", END: END})
     graph.add_edge("rearm", "model")
     graph.add_edge("tools", "model")
@@ -255,15 +371,54 @@ def build_graph(tools: list, checkpointer):
     return graph.compile(checkpointer=checkpointer)
 
 
-async def run_turn(graph, message: str, *, caller_employee_id: str, thread_id: str):
-    """The one entry point every caller uses: tests, an eval harness, an
-    optional CLI (PROJECT-DESCRIPTION.md section 8: "passes caller context and
-    a thread id into the SAME core functions the tests call — never a second
-    path into the workflow"). `caller_employee_id` and `thread_id` are the two
-    application inputs section 8 requires; nothing else establishes identity.
+def _outcome(result: dict) -> dict:
+    """Every run either finished or paused on an approval — never anything else.
+
+    `result["__interrupt__"]` is how LangGraph reports a live interrupt from
+    `.ainvoke` (Lesson 9's `graph.py` reads the identical key). Shaped as a
+    dict rather than a bare string so a caller — a test, an eval harness, a
+    CLI — can branch on `status` without inspecting graph internals.
+    """
+    interrupts = result.get("__interrupt__")
+    if interrupts:
+        return {"status": "paused", "payload": interrupts[0].value, "answer": None}
+    return {"status": "done", "answer": message_text(result["messages"][-1]), "payload": None}
+
+
+async def run_turn(graph, message: str, *, caller_employee_id: str, thread_id: str) -> dict:
+    """The one entry point every caller uses to SEND a message: tests, an eval
+    harness, an optional CLI (PROJECT-DESCRIPTION.md section 8: "passes caller
+    context and a thread id into the SAME core functions the tests call —
+    never a second path into the workflow"). `caller_employee_id` and
+    `thread_id` are the two application inputs section 8 requires; nothing
+    else establishes identity.
+
+    Returns `{"status": "done", "answer": str}` or, if `approval_gate` paused
+    this turn, `{"status": "paused", "payload": {...}}` — call `resume_turn`
+    with a human's decision to continue.
     """
     result = await graph.ainvoke(
         {"messages": [HumanMessage(message)], "caller": {"employee_id": caller_employee_id}},
-        config={"configurable": {"thread_id": thread_id}},
+        config={"configurable": {"thread_id": thread_id}, "recursion_limit": RECURSION_LIMIT},
     )
-    return message_text(result["messages"][-1])
+    return _outcome(result)
+
+
+async def resume_turn(graph, *, thread_id: str, approved: bool, reason: str = "", decided_by: str = "human") -> dict:
+    """Resume a turn `approval_gate` paused, with a human's decision.
+
+    The counterpart to `run_turn` — together they are the ONLY two ways to
+    drive this graph; nothing else (not even a CLI, per section 8) gets a
+    third path. `Command(resume=...)` is Lesson 9's mechanism, unchanged: it
+    picks the paused run back up on the exact `interrupt()` line that
+    suspended it, using the checkpointed state under this `thread_id` —
+    which, because that checkpointer is `AsyncSqliteSaver`, works identically
+    whether this call happens in the SAME process that paused, or a fresh one
+    after a restart (a fresh `build_graph`/`get_checkpointer` pair pointed at
+    the same file recovers the same paused run — proven in smoke_test.py).
+    """
+    result = await graph.ainvoke(
+        Command(resume={"approved": approved, "reason": reason, "decided_by": decided_by}),
+        config={"configurable": {"thread_id": thread_id}, "recursion_limit": RECURSION_LIMIT},
+    )
+    return _outcome(result)

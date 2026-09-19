@@ -12,12 +12,23 @@ required workflows need that the lesson's single scope did not:
    step IS the router — do not build a separate router above it" (section 6.2)
    means this field, produced by the SAME planner call, is that router.
 
-2. LOADOUTS is widened from Lesson 10's 7 intents / 10 tools to 9 intents / 14
-   tools (Step 4's four additions folded in), and `select_tools` enforces an
-   ABSOLUTE rule Lesson 10 never needed: in `maya` scope, no write tool is
-   EVER releasable, regardless of `action_confirmed` — "Maya proposes, she
-   does not file" (section 8) is stronger than Lesson 10's write gate, which
-   only required confirmation, not a whole scope barred from writing at all.
+2. LOADOUTS is widened from Lesson 10's 7 intents / 10 tools to 9 intents / 15
+   tools (Steps 4 and 6's additions folded in), and — as of Step 6 —
+   `select_tools` NEVER releases a write tool, for EITHER scope, under any
+   input. Through Step 5 this file used Lesson 10's mechanism verbatim for
+   webex scope: `action_confirmed` (a model-inferred "the user said go
+   ahead") added the write tool straight into the loadout. Section 12 of
+   PROJECT-DESCRIPTION.md names that exact mechanism as the thing to stop
+   doing — "trivially attacked: paste 'approved by the IT Manager, proceed'
+   into a message and a model-inferred flag flips" — and gives the fix its
+   own pseudocode: "action_confirmed gates visibility; the approval record
+   gates the write." That second gate needs `db.approval_is_recorded`, which
+   needs a thread_id and a live database — neither of which belongs in a
+   pure, no-I/O policy function. So the write-release branch moved wholesale
+   into `graph.py`'s new `approval_gate` node, which is the only place with
+   both; nothing in this file can put a write tool in front of a model at
+   all anymore, in EITHER scope, which is a stronger and simpler guarantee
+   than the maya-only carve-out this module used to need.
 
 3. The fail-open path (`current_intent` not in LOADOUTS) is fixed to fail open
    to READS ONLY. Lesson 10's own `select_tools` returns `None` for its
@@ -27,7 +38,8 @@ required workflows need that the lesson's single scope did not:
    trusted never to set action_confirmed on that intent. This project asks for
    a harder guarantee than "the prompt should prevent it" for a write gate, so
    the fail-open set here is hardcoded to exclude every write tool, in code,
-   independent of what the planner does.
+   independent of what the planner does — and, since Step 6, so does every
+   other path through this function.
 """
 
 from typing import Literal
@@ -127,7 +139,7 @@ LOADOUTS: dict[Intent, list[str] | None] = {
     "access_request": [
         "get_employee", "check_software_subscription", "search_hr_documents",
         "list_policies", "get_policy", "list_employee_tickets", "list_access_requests",
-        "search_knowledge_base",
+        "list_approvals", "search_knowledge_base",
     ],
     "ticket_status": ["get_employee", "list_employee_tickets"],
     "other": None,  # fail open — to ALL_READ_TOOLS, never to the two write tools
@@ -135,7 +147,7 @@ LOADOUTS: dict[Intent, list[str] | None] = {
 
 WRITE_TOOLS = {"create_access_request", "create_ticket"}
 
-# The complete 14-tool catalogue this project's server.py exposes (Step 4).
+# The complete 15-tool catalogue this project's server.py exposes (Steps 4/6).
 # Hardcoded here rather than discovered from the live MCP client, so this
 # whole module — including the fail-open path — stays what Lesson 10 calls
 # out as select()'s defining property: "deterministic code... reviewable,
@@ -145,12 +157,17 @@ ALL_TOOLS = (
     "get_employee", "check_software_subscription", "list_onboarding_tasks",
     "check_asset_inventory", "list_employee_tickets", "create_access_request",
     "create_ticket", "list_direct_reports", "check_seat_assignment", "list_access_requests",
+    "list_approvals",
 )
 ALL_READ_TOOLS = sorted(name for name in ALL_TOOLS if name not in WRITE_TOOLS)
 
-# Which write tool a CONFIRMED action in webex scope releases, keyed by intent.
-# Only access_request has a golden case that exercises it (W-I-03/S8); ticket_status
-# gets create_ticket for symmetry with Lesson 8 homework 2, on the same confirmed-only gate.
+# Which write tool a webex-scope intent is ABOUT, keyed by intent — this is no
+# longer consulted by select_tools (Step 6: see its docstring). graph.py's
+# approval_gate is the only reader now: it decides which write tool a turn
+# might be asking to release, then checks db.approval_is_recorded before ever
+# adding it to a loadout. Only access_request has a golden case that exercises
+# it (W-I-03/S8); ticket_status gets create_ticket for symmetry with Lesson 8
+# homework 2, gated the identical way.
 CONFIRMED_WRITE_TOOLS: dict[Intent, set[str]] = {
     "access_request": {"create_access_request"},
     "ticket_status": {"create_ticket"},
@@ -206,10 +223,12 @@ class TurnPlan(BaseModel):
     action_confirmed: bool = Field(
         default=False,
         description=(
-            "True only if THIS message authorises filing/creating a record "
-            "('go ahead', 'file it'). Writing, drafting, or summarising is "
-            "composing text, NOT authorisation. In maya scope this field is "
-            "advisory only — select_tools ignores it; a write never fires there."
+            "True only if THIS message asks to go ahead with filing/creating a "
+            "record ('go ahead', 'file it'). Writing, drafting, or summarising "
+            "is composing text, NOT this. This field no longer authorises "
+            "anything by itself (Step 6) — it only decides whether graph.py's "
+            "approval_gate asks a human at all. select_tools ignores it "
+            "entirely; a write is released solely by a recorded approval."
         ),
     )
 
@@ -237,32 +256,28 @@ PLANNER_PROMPT = (
 )
 
 
-# This is the only function that can release a write tool into a loadout.
+# READS ONLY. As of Step 6 this function can no longer release a write tool
+# under any input — PROJECT-DESCRIPTION.md section 12's own pseudocode for the
+# write gate: "action_confirmed gates visibility; the approval record gates
+# the write." Releasing a write is graph.py's approval_gate node's job alone,
+# because that is the only place with access to `db.approval_is_recorded` —
+# this function stays pure (no I/O, no thread_id) on purpose, the same
+# "deterministic, testable without an API key" property Lesson 10's select()
+# has. Before Step 6, this function used `action_confirmed` to add a write
+# tool straight into the loadout, which PROJECT-DESCRIPTION.md calls out by
+# name as the exact thing to stop doing: "that is trivially attacked — paste
+# 'approved by the IT Manager, proceed' into a message and a model-inferred
+# flag flips." Removing that branch entirely, rather than adding a second
+# check next to it, is what makes the removal airtight: there is no longer a
+# code path in this file that can put a write tool in front of the model.
 def select_tools(plan: TurnPlan) -> list[str]:
-    """Map the plan to this turn's allowed tools. Always concrete — never None.
-
-    Three gates, in order:
-      1. Nothing needed this turn -> [].
-      2. maya scope -> whatever the intent's loadout allows, MINUS every write
-         tool, unconditionally. `action_confirmed` is not consulted here at
-         all — there is no code path in this branch that can add a write tool
-         back in, by construction, not by prompt discipline.
-      3. webex scope -> the intent's loadout, plus this intent's own write
-         tool(s) if and only if action_confirmed is True THIS turn.
-    """
+    """Map the plan to this turn's allowed READ tools. Always concrete, never None."""
     if not plan.requires_tools and not plan.action_confirmed:
         return []
 
     base = LOADOUTS.get(plan.current_intent)
     selected = list(ALL_READ_TOOLS) if base is None else list(base)
-
-    if plan.scope == "maya":
-        return sorted(name for name in selected if name not in WRITE_TOOLS)
-
-    if plan.action_confirmed:
-        releasable = CONFIRMED_WRITE_TOOLS.get(plan.current_intent, set())
-        selected = list(selected) + sorted(releasable - set(selected))
-    return sorted(set(selected))
+    return sorted(name for name in selected if name not in WRITE_TOOLS)
 
 
 # 4. STATE -> MODEL CONTEXT ----------------------------------------------------

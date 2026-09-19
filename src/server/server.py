@@ -2,7 +2,7 @@
 NovaOps MCP server — policies + knowledge base + HR documents + database.
 
 This is Lesson 10's server.py (itself Lesson 9's, itself Lesson 8's), grown by
-five tools this project's two required workflows (Maya, Webex) need that no
+six tools this project's two required workflows (Maya, Webex) need that no
 lesson provides:
 
   files    list_policies · get_policy                              (unchanged)
@@ -13,34 +13,41 @@ lesson provides:
   SQLite   create_access_request                                    (unchanged — the one L10 WRITE)
   SQLite   create_ticket                                             <- Lesson 8 homework 2's WRITE
   SQLite   list_direct_reports · check_seat_assignment
-           list_access_requests                                     <- this project's THREE reads
+           list_access_requests · list_approvals                    <- this project's FOUR reads
                                                                          (PROJECT-DESCRIPTION.md 6.3:
                                                                          "at least one capability...
                                                                          has no tool behind it")
 
-Fourteen tools. Same caveat Lesson 10 states about ten: every schema is a
+Fifteen tools. Same caveat Lesson 10 states about ten: every schema is a
 standing input-token cost on every call that has tools bound — Step 5's
 per-scope LOADOUTS (Lesson 10's dynamic-tool-loadout pattern) is what keeps a
-single turn from paying for all fourteen.
+single turn from paying for all fifteen.
 
 Run:
     python src/server/server.py        # serves at http://127.0.0.1:9878/mcp
 
-KNOWN LIMITATION, to be closed in Step 5 — NOT a design decision, a placeholder:
+CLOSED IN STEP 5 (was a known limitation through Step 4):
 
-search_hr_documents below takes `caller_employee_id` as an ordinary tool
-argument, which means the MODEL currently chooses its value. That is backwards
-for a permission check: PROJECT-DESCRIPTION.md section 12 requires the
-audience filter to run "as a retrieval filter, not a refusal after the fact",
-and a model-supplied identity is not a retrieval filter — it is exactly the
-kind of caller-asserted fact the write gate elsewhere in this project refuses
-to trust. Standing alone (this file, with no agent yet), there is no session
-identity to bind the argument to, so this is as far as Step 4 alone can go.
-Step 5 (the LangGraph backbone) must close this by injecting the session's
-authenticated employee id into every tool call itself — from graph state, not
-from a model-visible argument — the same way it will inject role/scope into
-which tools are even bound (Lesson 10's LOADOUTS pattern). Until that lands,
-do not treat this server as safe to expose to an untrusted model on its own.
+search_hr_documents takes `caller_employee_id` as an ordinary tool argument,
+so nothing here stops a MODEL from choosing its own value — that alone would
+be backwards for a permission check (PROJECT-DESCRIPTION.md section 12: the
+audience filter must run "as a retrieval filter, not a refusal after the
+fact", and a model-supplied identity is not that). This server, standing
+alone, has no session to bind the argument to, so it does NOT enforce this on
+its own. `src/agent/graph.py`'s `inject_caller_identity` is what actually
+closes it: every tool call the agent's ToolNode executes has this argument
+overwritten with the real, application-supplied caller id from graph state
+BEFORE it reaches this server — so treat this file as safe only behind that
+graph, never as a bare server exposed to an untrusted model directly.
+
+CLOSED IN STEP 6 — the write gate for create_access_request / create_ticket:
+
+Neither write tool checks anything about approval itself; both simply file a
+record, same as always. Authorization lives entirely in `src/agent/graph.py`'s
+`approval_gate` node, which releases either tool into a turn's loadout only
+once `db.approval_is_recorded(thread_id, tool_name)` is True — a fact recorded
+by a human's decision on a LangGraph `interrupt()`, never by anything the
+model said. See that file's module docstring for the full mechanism.
 """
 
 import sys
@@ -266,6 +273,22 @@ def list_access_requests(employee_id: str = "", software: str = "") -> list[dict
         software: Optional software/system name filter, e.g. 'Webex'. Omit for all.
     """
     return db.list_access_requests(employee_id, software)
+
+
+@mcp.tool()
+def list_approvals(request_id: str = "") -> list[dict]:
+    """List the named-approver chain for an access request.
+
+    AR001's chain shows exactly WHY it is blocked, not just that it is: an IT
+    Manager approval AND a Finance subscription-expansion approval are both
+    still 'needed' (neither has even been requested from the approver yet).
+    AR002's chain shows two 'pending' approvals (a manager and IT). Use this
+    to report a real blocker with its actual cause, never a bare status word.
+
+    Args:
+        request_id: Optional access-request id filter, e.g. 'AR001'. Omit for all.
+    """
+    return db.list_approvals(request_id)
 
 
 if __name__ == "__main__":
