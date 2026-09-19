@@ -48,6 +48,15 @@ out to close:
    `model` gets to call it for real. The model is NEVER the thing that decides
    this; `db.py`'s four ledger functions are deliberately not MCP tools, so
    there is no path by which the model could call them on itself.
+
+5. THE TWO TYPED RETURN CONTRACTS (Step 7, section 6.5). Neither is a new
+   graph path: `WebexHandoff` is `policy.TurnPlan.webex_handoff`, filled by
+   the SAME planner call every turn already makes, then completed with two
+   application facts (`source_thread_id`, `requested_by_employee_id`) right
+   here in `approval_gate` — the human approver reads it on the interrupt
+   payload. `OnboardingChecklist` is `extract_checklist` below: one EXTRA
+   structured-output call, made only on a maya-scope checklist/status turn,
+   after the graph itself has already finished — never inside the loop.
 """
 
 import os
@@ -68,7 +77,7 @@ sys.path.insert(0, str(AGENT_DIR.parent / "server"))
 
 import aiosqlite
 import db  # noqa: E402 — the write gate's ledger; see comment above
-from langchain_core.messages import HumanMessage, RemoveMessage, ToolMessage
+from langchain_core.messages import HumanMessage, RemoveMessage, SystemMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import END, START, StateGraph
@@ -83,8 +92,10 @@ from policy import (
     WRITE_TOOLS,
     answer_messages,
     planner_messages,
+    render_transcript,
     select_tools,
 )
+from schemas import OnboardingChecklist, WebexHandoff
 
 CHECKPOINT_PATH = os.environ.get("NOVAOPS_CHECKPOINT_PATH", "./novaops_checkpoints.db")
 
@@ -277,12 +288,25 @@ def build_graph(tools: list, checkpointer):
 
                 db.request_write_approval(thread_id, tool_name)  # idempotent
                 trace("approval_gate", f"pausing for human approval of {tool_name} (thread={thread_id})")
+                # The typed Maya -> Webex handoff (section 6.5), completed with the
+                # two application-supplied facts the model is never trusted with:
+                # which conversation this is, and who is really asking. This is what
+                # a human approver actually reads — never a claim that a write
+                # already happened.
+                handoff = None
+                if plan.webex_handoff is not None:
+                    handoff = WebexHandoff(
+                        **plan.webex_handoff.model_dump(),
+                        source_thread_id=thread_id,
+                        requested_by_employee_id=state["caller"]["employee_id"],
+                    ).model_dump()
                 decision = interrupt({
                     "kind": "write_approval",
                     "tool": tool_name,
                     "thread_id": thread_id,
                     "intent": plan.current_intent,
                     "relevant_facts": plan.relevant_facts,
+                    "handoff": handoff,
                     "question": f"Approve releasing {tool_name} for this case?",
                 })
                 approved = bool(decision.get("approved"))
@@ -371,7 +395,35 @@ def build_graph(tools: list, checkpointer):
     return graph.compile(checkpointer=checkpointer)
 
 
-def _outcome(result: dict) -> dict:
+async def extract_checklist(state: dict) -> OnboardingChecklist | None:
+    """The OTHER typed return contract (section 6.5): one EXTRA structured-
+    output call, made only when this turn's plan says it is checklist/status
+    shaped (`scope=='maya'` and `current_intent` in {onboarding_status,
+    equipment_request}) — every lookup, tangent, and recap turn in a 12-turn
+    session pays nothing for this, per section 8's own hint to bound cost.
+
+    Reads the SAME rendered transcript the planner reads (this turn's tool
+    results included), so an item can only appear with real evidence behind
+    it — never invented past what was actually read this session.
+    """
+    plan = TurnPlan(**state["plan"])
+    if plan.scope != "maya" or plan.current_intent not in {"onboarding_status", "equipment_request"}:
+        return None
+    extractor = get_model().with_structured_output(OnboardingChecklist, include_raw=True)
+    prompt = (
+        "Extract the onboarding checklist from this NovaOps conversation's "
+        "evidence — the tool results and the answer already given below. "
+        "Every item needs at least one citation (a source_path from a "
+        "retrieval result, a 'tool_name: record_id' pair, or a policy name) "
+        "drawn from what was ACTUALLY read in this transcript. Do not invent "
+        "an item with no evidence behind it; if nothing checklist-shaped was "
+        "established, return an empty items list.\n\n" + render_transcript(state["messages"])
+    )
+    result = await extractor.ainvoke([SystemMessage(prompt)])
+    return result["parsed"]
+
+
+async def _outcome(result: dict) -> dict:
     """Every run either finished or paused on an approval — never anything else.
 
     `result["__interrupt__"]` is how LangGraph reports a live interrupt from
@@ -381,8 +433,14 @@ def _outcome(result: dict) -> dict:
     """
     interrupts = result.get("__interrupt__")
     if interrupts:
-        return {"status": "paused", "payload": interrupts[0].value, "answer": None}
-    return {"status": "done", "answer": message_text(result["messages"][-1]), "payload": None}
+        return {"status": "paused", "payload": interrupts[0].value, "answer": None, "checklist": None}
+    checklist = await extract_checklist(result)
+    return {
+        "status": "done",
+        "answer": message_text(result["messages"][-1]),
+        "payload": None,
+        "checklist": checklist.model_dump() if checklist else None,
+    }
 
 
 async def run_turn(graph, message: str, *, caller_employee_id: str, thread_id: str) -> dict:
@@ -401,7 +459,7 @@ async def run_turn(graph, message: str, *, caller_employee_id: str, thread_id: s
         {"messages": [HumanMessage(message)], "caller": {"employee_id": caller_employee_id}},
         config={"configurable": {"thread_id": thread_id}, "recursion_limit": RECURSION_LIMIT},
     )
-    return _outcome(result)
+    return await _outcome(result)
 
 
 async def resume_turn(graph, *, thread_id: str, approved: bool, reason: str = "", decided_by: str = "human") -> dict:
@@ -421,4 +479,4 @@ async def resume_turn(graph, *, thread_id: str, approved: bool, reason: str = ""
         Command(resume={"approved": approved, "reason": reason, "decided_by": decided_by}),
         config={"configurable": {"thread_id": thread_id}, "recursion_limit": RECURSION_LIMIT},
     )
-    return _outcome(result)
+    return await _outcome(result)

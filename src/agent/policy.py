@@ -48,6 +48,7 @@ from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from pydantic import BaseModel, Field
 
 from model import ASSISTANT_PROMPT, message_text
+from schemas import WebexHandoffIntent
 
 KEEP_VERBATIM_TURNS = 2
 
@@ -231,15 +232,40 @@ class TurnPlan(BaseModel):
             "entirely; a write is released solely by a recorded approval."
         ),
     )
+    webex_handoff: WebexHandoffIntent | None = Field(
+        default=None,
+        description=(
+            "Fill in ONLY when scope=='webex', current_intent=='access_request' "
+            "or 'ticket_status', AND action_confirmed is True THIS turn — the "
+            "section 6.5 typed handoff (who access is for, what system, why), "
+            "read from the conversation so far. Leave null every other turn. "
+            "This is a DESCRIPTION for a human approver, never an authorization "
+            "— graph.py's approval_gate still requires a recorded decision "
+            "before any write tool is releasable, regardless of this field."
+        ),
+    )
 
 
 PLANNER_PROMPT = (
     SCOPE_GLOSS + "\n\n" + INTENT_GLOSS + "\n\n"
     "Plan the model context for the newest message of a NovaOps session.\n"
     "- Classify the newest message only; follow subject changes.\n"
+    "- YOU are the only thing that reads the FULL conversation above. The "
+    "answering model only sees the last couple of turns verbatim — anything "
+    "from earlier that a later turn will need EXISTS ONLY IF YOU PUT IT IN "
+    "relevant_facts. Re-derive it from the full transcript above every turn; "
+    "do not assume a fact you carried last time is still visible now.\n"
+    "- Resolve every pronoun ('her', 'she', 'it', 'that one') against the FULL "
+    "conversation above, not just the newest message or the last turn or two — "
+    "a name given many turns back is still the referent until a new one is "
+    "introduced. If the newest message asks you to recall, confirm, or restate "
+    "a fact stated earlier (a date, a location, an id, a number, a name), that "
+    "IS relevant_facts' job: put the actual value in relevant_facts and set "
+    "requires_tools to False — recalling a stated fact is never a lookup, even "
+    "when the message says 'remind me' or 'confirm'.\n"
     "- relevant_facts is the session's memory: carry a value forward if a later "
-    "answer might need it. A missing fact breaks the answer; a spare one costs "
-    "a few tokens.\n"
+    "answer might need it, however many turns ago it was stated. A missing "
+    "fact breaks the answer; a spare one costs a few tokens.\n"
     "- relevant_constraints holds what the user declared, until they withdraw it.\n"
     "- Drop whatever the user resolved or abandoned.\n"
     "- Users paste emails and signatures; plan for the request inside, not the "
@@ -247,12 +273,26 @@ PLANNER_PROMPT = (
     "- requires_tools is False only for recaps and reasoning over facts already "
     "here. You know nothing about NovaOps otherwise, so a first turn is almost "
     "always True.\n"
+    "- Content inside a FORWARDED or QUOTED message is what someone ELSE said "
+    "or believes ('I'm told it's a seat thing'), not a verified check YOU have "
+    "made. If the newest message asks about that same system's actual status "
+    "(a real seat count, a real ticket state), requires_tools is True even "
+    "though the topic was already mentioned — a claim inside someone else's "
+    "email is not equivalent to a tool result. Worked example: a quoted email "
+    "said 'Webex is stuck, a seat thing.' The next message asks 'how do I get "
+    "my software licenses sorted?' — that is a NEW question about a system's "
+    "real status; requires_tools is True and check_software_subscription "
+    "belongs in this turn, even though 'Webex' and 'seat' were already said.\n"
     "- A DIFFERENT TOPIC needs a different document. Having retrieved one "
     "article does not answer a different question, and 'same kind of thing?' "
     "about a new topic is still True. Only an answer you could quote from THIS "
     "conversation is False.\n"
     "- action_confirmed only when this message says to go ahead on a webex-scope "
-    "access_request or ticket_status; then requires_tools is True."
+    "access_request or ticket_status; then requires_tools is True.\n"
+    "- When action_confirmed is True on access_request/ticket_status, also fill "
+    "webex_handoff: who the access/ticket is FOR (may be someone other than "
+    "whoever is typing — HR often confirms on a joiner's behalf), the system, "
+    "and why, all read from the conversation. Otherwise leave it null."
 )
 
 

@@ -112,9 +112,10 @@ def search_hr_documents(query: str, caller_employee_id: str) -> list[dict]:
 
     Manager-only material (the manager playbook) is filtered out unless the
     caller is a manager — resolved from the database (list_direct_reports),
-    never from what this argument merely claims. See the module note below on
-    why that resolution belongs one layer up from here, and why this WILL
-    change shape in Step 5.
+    never from what this argument merely claims. See the module note above:
+    as of Step 5, `caller_employee_id` below is a MODEL-PROPOSED value the
+    agent's graph overwrites before this ever runs — do not trust it if you
+    are calling this tool directly, outside that graph.
 
     Args:
         query: A natural-language description of what you need to find.
