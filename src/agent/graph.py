@@ -95,7 +95,7 @@ from policy import (
     render_transcript,
     select_tools,
 )
-from schemas import OnboardingChecklist, WebexHandoff
+from schemas import AccessDecision, OnboardingChecklist, WebexHandoff
 
 CHECKPOINT_PATH = os.environ.get("NOVAOPS_CHECKPOINT_PATH", "./novaops_checkpoints.db")
 
@@ -423,6 +423,36 @@ async def extract_checklist(state: dict) -> OnboardingChecklist | None:
     return result["parsed"]
 
 
+async def extract_access_decision(state: dict) -> AccessDecision | None:
+    """Webex's counterpart to `extract_checklist` — one EXTRA structured-output
+    call, made on every webex-scope turn (unlike the checklist's narrower
+    intent gate: section 9 treats `AccessDecision` as THIS workflow's return
+    contract full stop, and Webex's required traces are few enough that the
+    cost is trivial). Reads the same rendered transcript, so `actions_taken`
+    can only name a write that actually ran this turn — including a REUSE
+    (`create_access_request`'s `reused: True`), which the prompt below calls
+    out by name so 'reused AR001' is never misreported as 'filed a new one'.
+    """
+    plan = TurnPlan(**state["plan"])
+    if plan.scope != "webex":
+        return None
+    extractor = get_model().with_structured_output(AccessDecision, include_raw=True)
+    prompt = (
+        "Extract the access decision from this NovaOps conversation's evidence "
+        "— the tool results and the answer already given below. observed_facts "
+        "must be things actually read (seat counts, ticket/request ids, "
+        "entitlement, a policy clause). actions_taken must name only a write "
+        "tool call that ACTUALLY ran this turn — if a tool result says "
+        "'reused': true, say it reused an existing request, never that a new "
+        "one was filed; if no write tool ran, actions_taken is an empty list. "
+        "NEVER state or imply that access was granted or enabled — filing or "
+        "reusing a request is not the same as access being granted, and status "
+        "has no such value.\n\n" + render_transcript(state["messages"])
+    )
+    result = await extractor.ainvoke([SystemMessage(prompt)])
+    return result["parsed"]
+
+
 async def _outcome(result: dict) -> dict:
     """Every run either finished or paused on an approval — never anything else.
 
@@ -433,13 +463,18 @@ async def _outcome(result: dict) -> dict:
     """
     interrupts = result.get("__interrupt__")
     if interrupts:
-        return {"status": "paused", "payload": interrupts[0].value, "answer": None, "checklist": None}
+        return {
+            "status": "paused", "payload": interrupts[0].value, "answer": None,
+            "checklist": None, "access_decision": None,
+        }
     checklist = await extract_checklist(result)
+    access_decision = await extract_access_decision(result)
     return {
         "status": "done",
         "answer": message_text(result["messages"][-1]),
         "payload": None,
         "checklist": checklist.model_dump() if checklist else None,
+        "access_decision": access_decision.model_dump() if access_decision else None,
     }
 
 

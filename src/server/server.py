@@ -195,13 +195,13 @@ def list_employee_tickets(employee_id: str, status: str = "") -> list[dict]:
 def create_access_request(
     employee_id: str, software: str, business_justification: str
 ) -> dict:
-    """File an access request for an employee to a system (status: pending_approval).
-
-    This WRITES to the database. Use it only after confirming who the employee is,
-    that access is warranted, and — via list_access_requests — that no equivalent
-    request already exists for this employee and system (reuse it instead of
-    filing a duplicate). The request is created pending a human approval
-    decision — it does not grant access on its own.
+    """File an access request for an employee to a system (status: pending_approval)
+    — or return the one that already exists, unchanged. Idempotent by CODE, not
+    just by convention: calling this twice for the same (employee, system) can
+    never produce a second row (check the returned `reused` flag). Still confirm
+    who the employee is and that access is warranted before calling it — this
+    only stops a DUPLICATE, it does not decide the request; that stays a human
+    approval this request waits on, never something this call grants.
 
     Args:
         employee_id: The employee id the access is for, e.g. 'E001'.

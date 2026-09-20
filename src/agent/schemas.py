@@ -92,6 +92,48 @@ class WebexHandoffIntent(BaseModel):
     justification: str = Field(description="Why this access is needed, grounded in the conversation.")
 
 
+AccessStatus = Literal["blocked", "pending_approval", "no_action_needed", "information_only"]
+
+
+class AccessDecision(BaseModel):
+    """Webex's typed return contract (section 6.5): "separated observed facts,
+    actions actually taken, and recommended next steps; the blocking reason
+    when there is one; the status. It must never state that access was
+    granted." That last rule is why `status` has no 'approved'/'granted'
+    value at all — filing or reusing a request only ever reaches
+    'pending_approval' or 'blocked' here; an actual grant is a human's
+    decision this agent never makes and this schema cannot express.
+
+    Produced the same way `OnboardingChecklist` is (graph.extract_access_decision):
+    one extra structured-output call after the graph itself has finished,
+    reading the transcript's real tool results — never invented past what
+    was actually read or written this turn.
+    """
+
+    employee_id: str
+    employee_name: str
+    system: str
+    observed_facts: list[str] = Field(
+        min_length=1,
+        description="Cited facts this turn actually read: seat counts, an "
+        "existing ticket/request id, role entitlement, a policy clause.",
+    )
+    actions_taken: list[str] = Field(
+        default_factory=list,
+        description="What a WRITE TOOL actually did this turn, e.g. 'Reused "
+        "existing AR001 (blocked) — no new request filed' or 'Filed AR006, "
+        "pending_approval'. Empty list if no write tool ran. Never phrased as "
+        "'access granted' or 'access enabled' — filing/reusing a request is "
+        "not granting it.",
+    )
+    recommended_next_steps: list[str] = Field(default_factory=list)
+    blocked_reason: str | None = Field(
+        default=None, description="The REAL cause when status=='blocked' (a seat "
+        "limit, a missing named approval) — never a placeholder."
+    )
+    status: AccessStatus
+
+
 class WebexHandoff(WebexHandoffIntent):
     """The complete typed handoff (section 6.5's minimum, all four fields):
     subject, system, justification (above, model-inferred) plus the two
