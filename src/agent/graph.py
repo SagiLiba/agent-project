@@ -237,6 +237,24 @@ def build_graph(tools: list, checkpointer):
         plan = result["parsed"] or TurnPlan(
             scope="maya", current_intent="other", requires_tools=True,
         )
+        # STRUCTURAL BACKSTOP for a real, reproducible planner failure (found
+        # via chat.py dogfooding, not a golden-set turn): on turn 1 of a
+        # brand-new thread there is, by definition, no earlier fact in this
+        # conversation to recall — the planner's own prompt already says so
+        # ("a first turn is almost always True", policy.PLANNER_PROMPT) — yet
+        # the model reliably (3/3 in isolated testing, with or without extra
+        # prompt wording aimed straight at this) still marks a real,
+        # never-before-asked policy/lookup question as requires_tools=False
+        # and then answers from a fluent but entirely invented "policy" (a
+        # fake "HR Policy 4.2" with fabricated numbers) instead of the real,
+        # audience-filtered document. Prompt wording alone did not close
+        # this; enforce the rule the prompt already states, in code, the
+        # same way section 6.6 draws a hard line for caller identity rather
+        # than trusting the model to self-police every time.
+        if len(state["messages"]) <= 1 and plan.current_intent != "other" and not plan.requires_tools:
+            trace("plan", f"OVERRIDE requires_tools False->True (first turn of thread, "
+                          f"intent={plan.current_intent} — nothing could have been recalled yet)")
+            plan.requires_tools = True
         trace("plan", f"scope={plan.scope} intent={plan.current_intent} "
                        f"requires_tools={plan.requires_tools} action_confirmed={plan.action_confirmed}")
         return {"plan": plan.model_dump()}
