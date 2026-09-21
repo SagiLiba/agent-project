@@ -264,7 +264,16 @@ PLANNER_PROMPT = (
     "a fact stated earlier (a date, a location, an id, a number, a name), that "
     "IS relevant_facts' job: put the actual value in relevant_facts and set "
     "requires_tools to False — recalling a stated fact is never a lookup, even "
-    "when the message says 'remind me' or 'confirm'.\n"
+    "when the message says 'remind me' or 'confirm'. A name is only a "
+    "'fact stated earlier' if a TOOL already returned that person's record "
+    "(or the user themself stated the value being recalled, e.g. a date "
+    "THEY gave) somewhere above — merely spelling or correcting a name for a "
+    "brand-new lookup ('I need the record for rrachel stein (Rachel, not "
+    "Daniel), look her up') is NOT recalling anything: nobody has stated "
+    "Rachel Stein's actual record yet, so this is a fresh lookup and "
+    "requires_tools is True, exactly as if the name were spelled correctly "
+    "the first time. Never mistake naming/correcting WHO to look up for "
+    "already knowing WHAT the lookup would return.\n"
     "- relevant_facts is the session's memory: carry a value forward if a later "
     "answer might need it, however many turns ago it was stated. A missing "
     "fact breaks the answer; a spare one costs a few tokens.\n"
@@ -274,7 +283,14 @@ PLANNER_PROMPT = (
     "to look up is Rachel Stein, not the typo \"rrachel stein\" and not "
     "Daniel') — a lookup tool will not fuzzy-match the typo, so the corrected "
     "spelling has to be explicit here, not left for the answering step to "
-    "notice on its own.\n"
+    "notice on its own. This correction is WHAT TO SEARCH FOR, never a "
+    "substitute for searching: naming the corrected spelling in "
+    "relevant_facts does NOT make this a recalled fact, and does NOT set "
+    "requires_tools to False. If this person's actual record (their real "
+    "employee id, status, department, ticket, etc.) has not already been "
+    "fetched by a tool earlier in this conversation, requires_tools stays "
+    "True — a corrected NAME is not the RECORD the user asked to see, and "
+    "answering from the name alone is inventing the rest.\n"
     "- relevant_constraints holds what the user declared, until they withdraw it.\n"
     "- Drop whatever the user resolved or abandoned.\n"
     "- Users paste emails and signatures; plan for the request inside, not the "
@@ -382,8 +398,38 @@ def planner_messages(state: dict) -> list:
 
 
 def render_plan(plan: TurnPlan) -> str:
+    """Everything about this turn the ANSWERING model — the one that actually
+    calls tools, including a just-released write — gets to see. `webex_handoff`
+    is a `TurnPlan` field like any other, but it was being computed and then
+    read ONLY by `approval_gate` (for the human approver's interrupt payload)
+    and never rendered here — so the model calling `create_access_request`
+    had no access to it at all, only to `relevant_facts`.
+
+    That gap caused a real one: W-S-01 turn 4 filed AR005 for E004 (Sara, the
+    CALLER) instead of E010 (Rachel, the actual subject) — `relevant_facts`
+    carried "the person to look up is Rachel Stein" (a NAME) but never
+    "Rachel Stein's employee_id is E010", while `_caller_note` was loudly
+    telling the model the CALLER's id (E004) is the one number it has ready
+    to hand. `webex_handoff.subject_employee_id` was ALREADY the field
+    correctly resolving this — the planner's own prompt requires it — it
+    just never reached here. Rendering it explicitly closes that gap without
+    touching `approval_gate` or the planner at all.
+    """
+
     def bullets(items: list[str]) -> str:
         return "\n".join(f"  - {item}" for item in items) if items else "  - (none)"
+
+    handoff = ""
+    if plan.webex_handoff is not None:
+        h = plan.webex_handoff
+        subject = f"{h.subject_employee_id or '(UNRESOLVED — do not guess a different real id)'} ({h.subject_name})"
+        handoff = (
+            f"\nThis request/ticket is FOR: {subject} — system: {h.system}. "
+            f"If you call a write or lookup tool this turn that takes an "
+            f"employee_id for WHO the access/ticket is for, use THIS id, "
+            f"never the caller's own id from the note above unless they are "
+            f"the same person.\n"
+        )
 
     return (
         "\n\n--- CONTEXT FOR THIS TURN ---\n"
@@ -391,6 +437,7 @@ def render_plan(plan: TurnPlan) -> str:
         f"User's current intent: {plan.current_intent}\n"
         f"Established facts you must use:\n{bullets(plan.relevant_facts)}\n"
         f"Constraints still in force:\n{bullets(plan.relevant_constraints)}\n"
+        f"{handoff}"
         "--- END CONTEXT ---"
     )
 

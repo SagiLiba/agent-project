@@ -78,6 +78,7 @@ sys.path.insert(0, str(AGENT_DIR.parent / "server"))
 import aiosqlite
 import db  # noqa: E402 — the write gate's ledger; see comment above
 from langchain_core.messages import HumanMessage, RemoveMessage, SystemMessage, ToolMessage
+from langfuse.langchain import CallbackHandler
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import END, START, StateGraph
@@ -392,7 +393,22 @@ def build_graph(tools: list, checkpointer):
     graph.add_edge("rearm", "model")
     graph.add_edge("tools", "model")
 
-    return graph.compile(checkpointer=checkpointer)
+    # THE INSTRUMENTATION, IN FULL (Step 9 / Lesson 11 exercise 2): binding the
+    # callback here, on the COMPILED graph, means every caller — run_turn,
+    # resume_turn, both replay tests, the eval harness — exports without
+    # passing anything; nobody downstream can forget to instrument. The six
+    # add_node names just above (plan, select, approval_gate, model, rearm,
+    # tools) are exactly the span names a trace shows, so section 14's
+    # "classify -> scope -> tools -> answer" is the trace tree, unlabelled by
+    # anything written here — plan classifies, select picks scope-visible
+    # tools, tools runs them, model answers. Request identity (session id,
+    # user id, the per-turn root span, trajectory metadata) is NOT this file's
+    # job — same line Lesson 11 draws: tracing belongs to the agent, knowing
+    # WHICH conversation is being traced belongs to whoever started it
+    # (evals/run_eval.py).
+    return graph.compile(checkpointer=checkpointer).with_config(
+        {"callbacks": [CallbackHandler()]}
+    )
 
 
 async def extract_checklist(state: dict) -> OnboardingChecklist | None:
