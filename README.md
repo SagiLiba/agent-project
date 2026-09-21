@@ -25,6 +25,7 @@ this repo is the student's own copy and needs no special credential to read.)
 | **[GOLDEN-DATASETS.json](GOLDEN-DATASETS.json)** | Annotated class material — every expectation readable. Develop and self-check against this |
 | **[EVALUATION-INPUTS.yaml](EVALUATION-INPUTS.yaml)** | The measured set: questions only, no answers. Run it once, at the end |
 | **[SUBMISSION.md](SUBMISSION.md)** | Copy into your own repository and fill in — repo link, Langfuse project, trace index |
+| **[TUTORIAL.md](TUTORIAL.md)** | Setup, the interactive chat CLI, the dataset, running evals, reading Langfuse traces, and where to make a change |
 | **[novaops-enterprise-agent-dataset/](novaops-enterprise-agent-dataset/)** | The NovaOps world: the document corpus, the operational database, and per-workflow material |
 
 ## The shape of it
