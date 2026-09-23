@@ -26,6 +26,7 @@ this repo is the student's own copy and needs no special credential to read.)
 | **[EVALUATION-INPUTS.yaml](EVALUATION-INPUTS.yaml)** | The measured set: questions only, no answers. Run it once, at the end |
 | **[SUBMISSION.md](SUBMISSION.md)** | Copy into your own repository and fill in — repo link, Langfuse project, trace index |
 | **[TUTORIAL.md](TUTORIAL.md)** | Setup, the interactive chat CLI, the dataset, running evals, reading Langfuse traces, and where to make a change |
+| **[AGENT-LLD-TEMPLATE.md](AGENT-LLD-TEMPLATE.md)** | Reusable Low-Level Design template for designing a *new* agent — distilled from all 14 course lessons and this build |
 | **[novaops-enterprise-agent-dataset/](novaops-enterprise-agent-dataset/)** | The NovaOps world: the document corpus, the operational database, and per-workflow material |
 
 ## The shape of it
