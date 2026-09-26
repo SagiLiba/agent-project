@@ -11,7 +11,7 @@ and it is how every trace gets found.
 | ------------------- | ------------------------------------------------ |
 | **Repository URL**  | `https://github.com/SagiLiba/agent-project` |
 | **Access**          | public |
-| **Commit reviewed** | `42662b0a46a398efc4c9a35a928fde780cdebb8e` |
+| **Commit reviewed** | `ad70ad0001d3781eef940d5eceeb50ccdff37107` |
 
 ## 2. Langfuse
 
@@ -20,7 +20,7 @@ and it is how every trace gets found.
 | **Host region**    | `cloud.langfuse.com` (EU) |
 | **Project name**   | `My Project` (organization: `liba's Organization`) |
 | **Instructor role**| Member *(required — traces are read through the API)* |
-| **Invitation accepted** | no — not yet sent, will be added before the deadline |
+| **Invitation accepted** | yes |
 
 ## 3. Scope completed
 
@@ -34,6 +34,7 @@ and it is how every trace gets found.
 | Optional stage | Done | Evidence |
 | ------------------------------- | -------- | -------- |
 | Lesson 12 — loop engineering     | no | not attempted |
+| Lesson 13 — security and guardrails | no | not attempted |
 | Lesson 14 — packaging and deploy | no | not attempted |
 
 ## 4. Durable-behavior evidence
@@ -59,38 +60,38 @@ blank if you did not run it.
 
 | Item | Turn | Trace ID |
 | ---- | ---- | -------- |
-| `M-I-01` | — | `a924d3b6f6bb15fd1d40796286dfb73a` |
-| `M-I-02` | — | `5bae1f6d5ae9b039081d29e662b3237b` |
-| `M-I-03` | — | `deb58f2d2d0ddfc621debca63782bc91` |
-| `M-S-01` | 1 | `010f8cf92558fff5ffee25cdeee3ce0e` |
-| `M-S-01` | 2 | `51255b286aecc5f29800cfcf2956466e` |
-| `M-S-01` | 3 | `53a80f5aa2ec6ac0941ccee7861a38b6` |
-| `M-S-01` | 4 | `130d61c7d29cb1349da45c8264651d13` |
-| `M-S-01` | 5 | `7b231edbce168b9561557d5b7579da82` |
-| `M-S-01` | 6 | `81b7bbae983b7ec0c4d8676bdb7fbc3c` |
-| `M-S-01` | 7 | `882266419b612f7c049b6416e2f5650a` |
-| `M-S-01` | 8 | `d80cff891a5fb2f5e41a6253afc462d1` |
-| `M-S-01` | 9 | `744d5e06ecac192560a3dee1f5638d25` |
-| `M-S-01` | 10 | `e086871619e44256958ec0d191b0cd10` (paused → resumed, approved) |
-| `M-S-01` | 11 | `55069f854296d043353adffa67ceaf98` |
-| `M-S-01` | 12 | `0cd06b84ab3368dcdaf5645ab8618138` |
-| `M-S-02` | 1 | `9d254c0b25ed87b45147558f14bd68ce` |
-| `M-S-02` | 2 | `e8c28563852481a86694820746a2c6d5` |
-| `M-S-02` | 3 | `1a48d0152c1153193f89faf635153838` |
-| `M-S-02` | 4 | `4d52a9d081cfd1551051fe1705b2c50e` |
-| `M-S-02` | 5 | `6840b97b11e735a7701bb1cc506fa468` |
+| `M-I-01` | — | `31fd07ad90ace7d3e30f8f91daa92b4a` |
+| `M-I-02` | — | `d2751dc17b02d7209d6f3a6d67276caa` |
+| `M-I-03` | — | `c7925ebccb0e25a37da8c2c2135fa1e4` |
+| `M-S-01` | 1 | `ad5b6247be54c7300ce60241a95631f6` |
+| `M-S-01` | 2 | `b95cd7c6e2dbc7230f008be263e57f6f` |
+| `M-S-01` | 3 | `7eb2f07c224eee0b48c72ab05482ab7a` |
+| `M-S-01` | 4 | `e43b057ee98f085f9fc3a7eb3b1c255a` |
+| `M-S-01` | 5 | `5e2b7f4f92ebe1aceaa3116a727f90aa` |
+| `M-S-01` | 6 | `36bd647c9731bd831527143645394bef` |
+| `M-S-01` | 7 | `153fea14ba2a453b037c53b86b16091c` |
+| `M-S-01` | 8 | `784a9b5dfa6a70f4fb5a4ec1d0b9d066` |
+| `M-S-01` | 9 | `530317f1837d871c20bbad914a952826` |
+| `M-S-01` | 10 | `2d343bef922af04fdb81b78f6b89b42c` (paused → resumed, approved) |
+| `M-S-01` | 11 | `fb9f9fb551b5953e696a73800a1f3c93` |
+| `M-S-01` | 12 | `b9900b62b2d9a935f24898e8adfe3eec` |
+| `M-S-02` | 1 | `b889bc4e2cf1c6297f69102e8c7c8572` |
+| `M-S-02` | 2 | `eb14ee94dec9e2cc5f8f5b3e75ab2c71` |
+| `M-S-02` | 3 | `cfee74ffd0673389024b8f09e2fe6324` |
+| `M-S-02` | 4 | `886f9dbbb4980c1d4c6fd9af75f3b37f` |
+| `M-S-02` | 5 | `0a7761245ddd71c4f65cee9c9b70e4a1` |
 
 ### Webex - IT operations
 
 | Item | Turn | Trace ID |
 | ---- | ---- | -------- |
-| `W-I-01` | — | `3825baaecf0c68e854736b16711a722d` |
-| `W-I-02` | — | `4406c115df6b2f9c76be5279522cac6f` |
-| `W-I-03` | — | `675c497f1b1ed8f5ac8827b8b17262b4` |
-| `W-S-01` | 1 | `405b06c71119b3e22ade26cc56888166` |
-| `W-S-01` | 2 | `d8e3dd8f08c221225bddbe0b3187a153` |
-| `W-S-01` | 3 | `9e45e8ad46c06c70ab772e3af93dee75` |
-| `W-S-01` | 4 | `dbdd5d80afe5673eef68dd66d7a19531` (paused → resumed, approved) |
+| `W-I-01` | — | `7a72d4ad659ec39ab093a33b508f629d` |
+| `W-I-02` | — | `0b3bb73de0f88a574fef439d5d889077` |
+| `W-I-03` | — | `f778cdc5474892c73345230d41b6cdbc` |
+| `W-S-01` | 1 | `a1c86a7074c1b6f4357732da019c1249` |
+| `W-S-01` | 2 | `56ce1626adc1567d2101394ecbc4c62c` |
+| `W-S-01` | 3 | `1c0657b0535077d6970d80101fe1d513` |
+| `W-S-01` | 4 | `e6827852d92da85dde0538c6225f623e` (paused → resumed, approved) |
 
 ### Vendor - CRM extraction  *(optional)*
 
@@ -113,7 +114,7 @@ blank if you did not run it.
 ## 6. Anything I should know
 
 Only the two required workflows and Lesson 11 (observability, required) were built by design —
-Vendor, Renewal, Lesson 12 and Lesson 14 were explicitly scoped out, not abandoned mid-attempt.
+Vendor, Renewal, Lesson 12, Lesson 13, and Lesson 14 were explicitly scoped out, not abandoned mid-attempt.
 One deliberate architectural divergence from `GOLDEN-DATASETS.json`'s reference decomposition
 is documented and reasoned about in `evals/golden.py` (`_ARCHITECTURE_OVERRIDES`): this project
 is one graph with a `scope` field and a single `approval_gate` guarding the one write tool for

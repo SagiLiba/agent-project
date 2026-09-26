@@ -52,9 +52,9 @@ not an erratum — noticing what nobody handed you is part of the work.
 ## Implementation map — every claim, its file
 
 Only the two required workflows (Maya, Webex) and the required observability stage (Lesson
-11) are built. **Lesson 12 (eval loop engineering) and Lesson 14 (packaging/deployment) were
-not attempted** — a deliberate scope decision, not an oversight; Vendor and Renewal
-(optional workflows) were likewise not built.
+11) are built. **Lesson 12 (eval loop engineering), Lesson 13 (security and guardrails), and
+Lesson 14 (packaging/deployment) were not attempted** — a deliberate scope decision, not an
+oversight; Vendor and Renewal (optional workflows) were likewise not built.
 
 | Claim | File(s) | Notes |
 | ----- | ------- | ----- |
